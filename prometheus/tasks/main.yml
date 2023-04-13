@@ -1,0 +1,133 @@
+---
+# tasks file for prometheus
+
+- name: update apt cache
+  apt: update_cache=true
+
+- name: Create a directory
+  ansible.builtin.file:
+    path: /etc/prometheus
+    state: directory
+    mode: '0755'
+
+- name: Create a directory
+  ansible.builtin.file:
+    path: /var/lib/prometheus
+    state: directory
+    mode: '0755'
+
+- name: Download and Unarchive
+  ansible.builtin.unarchive:
+    src: "https://github.com/prometheus/prometheus/releases/download/v2.31.0/prometheus-2.31.0.linux-amd64.tar.gz"
+    dest: "/home/ubuntu"
+    remote_src: yes
+
+- name: create group
+  ansible.builtin.group:
+    name: prometheus
+    state: present
+
+- name: create user
+  ansible.builtin.user:
+    name: prometheus
+    shell: /dev/null
+    groups: prometheus
+    append: yes
+
+- name: copy
+  ansible.builtin.copy:
+    src: "{{ item.name }}"
+    dest: "{{ item.group }}"
+    mode: '0755'
+    remote_src: yes
+  loop:
+  - { name: '/home/ubuntu/prometheus-2.31.0.linux-amd64/prometheus', group: '/usr/local/bin/' }
+  - { name: '/home/ubuntu/prometheus-2.31.0.linux-amd64/promtool', group: '/usr/local/bin/' }
+  - { name: '/home/ubuntu/prometheus-2.31.0.linux-amd64/consoles', group: '/etc/prometheus/' }
+  - { name: '/home/ubuntu/prometheus-2.31.0.linux-amd64/console_libraries', group: '/etc/prometheus/' }
+
+- name: Change file ownership, group and permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: prometheus
+    group: prometheus
+    mode: '0775'
+  loop:
+    - '/etc/prometheus/'
+    - '/var/lib/prometheus/'
+
+- name:
+  ansible.builtin.blockinfile:
+    path: /etc/prometheus/prometheus.yml
+    create: true
+    block: |
+      global:
+        scrape_interval: 15s # Set the scrape interval to every 15 seconds. Default is every 1 minute.
+        evaluation_interval: 15s # Evaluate rules every 15 seconds. The default is every 1 minute.
+        # scrape_timeout is set to the global default (10s).
+
+      alerting:
+        alertmanagers:
+          - static_configs:
+          - targets:
+            # - alertmanager:9093
+      
+      rule_files:
+        # - "first_rules.yml"
+        # - "second_rules.yml"
+
+      scrape_configs:
+        # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+        - job_name: "prometheus"
+
+        # metrics_path defaults to '/metrics'
+        # scheme defaults to 'http'.
+
+          static_configs:
+            - targets: ["localhost:9090"]
+
+          - job_name: "apache"
+            static_configs:
+            - targets: ["172.31.4.180:9117"]
+              labels:
+                alias: "apache-server1"
+
+          # The job name is added as a label `job=<job_name>` to any timeseries scraped from this config.
+          - job_name: 'node'
+            static_configs:
+            # metrics_path defaults to '/metrics'
+            # scheme defaults to 'http'.
+              - targets: ['localhost:9100']
+
+          remote_write: 
+            - url: http://18.133.252.53:3000/ 
+              basic_auth: 
+                username: admin 
+                password: password1234
+
+- name:
+  ansible.builtin.blockinfile:
+    path: /etc/systemd/system/prometheus.service
+    create: true
+    block: |
+      [Unit]
+      Description=Prometheus
+      Wants=network-online.target
+      After=network-online.target
+
+      [Service]
+      User=prometheus
+      Group=prometheus
+      Restart=always
+      Type=simple
+      ExecStart=/usr/local/bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/var/lib/prometheus/ --web.console.templates=/etc/prometheus/consoles --web.console.libraries=/etc/prometheus/console_libraries --web.listen-address=0.0.0.0:9090
+
+      [Install]
+      WantedBy=multi-user.target
+
+- name: enable, start and reload
+  ansible.builtin.systemd:
+    name: prometheus
+    enabled: true
+    daemon_reload: true
+    state: started

@@ -1,0 +1,69 @@
+---
+# tasks file for apache-exporter
+
+- name: update apt cache 
+  apt: update_cache=true 
+
+- name: Install Apache 
+  ansible.builtin.package: 
+    name: apache2 
+    state: present 
+
+- name: Download and Unarchive 
+  ansible.builtin.unarchive:
+    src: "https://github.com/Lusitaniae/apache_exporter/releases/download/v0.13.1/apache_exporter-0.13.1.linux-amd64.tar.gz"
+    dest: "/home/ubuntu/" 
+    remote_src: yes 
+
+- name: copy files 
+  ansible.builtin.copy:
+    src: '/home/ubuntu/apache_exporter-0.13.1.linux-amd64/apache_exporter' 
+    dest: '/usr/local/bin' 
+    mode: '0755' 
+    remote_src: yes 
+
+- name: create group
+  ansible.builtin.group: 
+    name: prometheus 
+    state: present 
+
+- name: create user
+  ansible.builtin.user: 
+    name: prometheus 
+    shell: /dev/null 
+    groups: prometheus 
+    append: yes 
+
+- name: systemd d file 
+  ansible.builtin.blockinfile: 
+    create: true 
+    path: /etc/systemd/system/apache_exporter.service 
+    block: | 
+      [Unit] 
+      Description=Prometheus 
+      Documentation=https://github.com/Lusitaniae/apache_exporter 
+      Wants=network-online.target 
+      After=network-online.target 
+      
+      [Service] 
+      Type=simple 
+      User=prometheus 
+      Group=prometheus 
+      ExecReload=/bin/kill -HUP $MAINPID 
+      ExecStart=/usr/local/bin/apache_exporter \ 
+        --insecure \ 
+        --scrape_uri=http://localhost/server-status/?auto \ 
+        --telemetry.address=0.0.0.0:9117 \ 
+        --telemetry.endpoint=/metrics 
+      
+      SyslogIdentifier=apache_exporter 
+      Restart=always 
+      [Install] 
+      WantedBy=multi-user.target 
+      
+- name: enable, start and reload 
+  ansible.builtin.systemd: 
+    name: apache_exporter 
+    enabled: true 
+    daemon_reload: true 
+    state: started

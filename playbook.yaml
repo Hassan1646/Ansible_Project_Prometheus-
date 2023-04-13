@@ -1,0 +1,13 @@
+- name: configure apache and exporter 
+  hosts: apache 
+  become: yes 
+  ignore_errors: yes 
+  roles: 
+    - apache-exporter
+
+- name: configure prometheus server 
+  hosts: prometheus 
+  become: yes 
+  ignore_errors: yes 
+  roles: 
+    - prometheus
